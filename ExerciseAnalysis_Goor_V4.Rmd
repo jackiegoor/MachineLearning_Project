@@ -1,0 +1,143 @@
+---
+title: "Exercise Analysis"
+author: "Jackie Goor"
+date: "April 12, 2016"
+output: html_document
+---
+# Executive Summary
+The ability to collect data from body sensors has become prevalent. It is primarily used to tell how
+many exercises have been done but not necessarily how well the exercises have been performed. This
+analysis is an attempt to classify data into 5 different categories of exercise performance. The 
+categories are defined as follows:
+        A - Exercise performed correctly
+        B - Exercise performed incorrectly - Elbows front
+        C - Exercise performed incorrectly - Dumbbell lifted 1/2 way
+        D - Exercise performed incorrectly - Dumbbell lowered 1/2 way
+        E - Exercise performed incorrectly - Hips to the front
+
+The primary goal is to be able to assess exercise performance and provide feedback on if the exercise
+is being done correctly or, if not, what is being done wrong.
+
+# Data Sets
+The training data was downloaded from:
+        https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+This data set was split into a training and a testing set.
+
+The validation data was downloaded from:
+        https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+# Data Transformations/Processing
+The data sets were processed to exclude columns that contain NA (or DIV/0) values.
+
+Then only columns containing measurements were selected (i.e. exclude timestamps, usernames, etc.).
+
+Additionally, highly correlated columns were excluded.
+
+# Exploratory Analysis
+Looking at the data sets, we're left with 46 columns (45 numeric columns with measurements and the
+column containing the class). The training set has 13737 observations and the testing set has 4113.
+
+# Model Selection
+I first created an rpart model but the accuracy was only 54.2%.
+
+Next I tried a random forest model. This model had a much higher accuracy on the testing data set 
+-- 100%, with a 95% confidence interval of 99.91% - 100%.
+
+# Analysis and Conclusion
+The random forest model performed much better than the rpart model. For this reason, the random forest
+model was selected for use on the validation data set.
+
+# Appendix - R Code and Tables/Figures
+
+```{r, echo=TRUE}
+library(sqldf)
+library(stats)
+library(caret)
+library(rpart)
+library(kernlab)
+library(party)
+library(e1071)
+library(randomForest)
+setwd("E:\\Training_HowTo\\Coursera\\DataScientist\\Course8_MachineLearning\\Project1\\")
+
+# Read the training and testing data sets.
+training = read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!"))
+validation = read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!"))
+
+# Exclude columns that contain any NA (or DIV/0 -- see read.csv na.strings) values.
+training <- training[, apply(training, 2, function(x) !any(is.na(x)))]
+validation <- validation[, apply(validation, 2, function(x) !any(is.na(x)))]
+
+# Exclude variables that don't contain measurements (user, time, etc.)
+training <- sqldf("select classe,accel_arm_x,accel_arm_y,accel_arm_z,
+        accel_belt_x,accel_belt_y,accel_belt_z,
+        accel_dumbbell_x,accel_dumbbell_y,accel_dumbbell_z,
+        accel_forearm_x,accel_forearm_y,accel_forearm_z,
+        gyros_arm_x,gyros_arm_y,gyros_arm_z,
+        gyros_belt_x,gyros_belt_y,gyros_belt_z,
+        gyros_dumbbell_x,gyros_dumbbell_y,gyros_dumbbell_z,
+        gyros_forearm_x,gyros_forearm_y,gyros_forearm_z,
+        magnet_arm_x,magnet_arm_y,magnet_arm_z,
+        magnet_belt_x,magnet_belt_y,magnet_belt_z,
+        magnet_dumbbell_x,magnet_dumbbell_y,magnet_dumbbell_z,
+        magnet_forearm_x,magnet_forearm_y,magnet_forearm_z,
+        pitch_arm,pitch_belt,pitch_dumbbell,pitch_forearm,
+        roll_arm,roll_belt,roll_dumbbell,roll_forearm,
+        total_accel_arm,total_accel_belt,total_accel_dumbbell,total_accel_forearm,
+        yaw_arm,yaw_belt,yaw_dumbbell,yaw_forearm
+        from training")
+
+# Split the training data into training and testing data sets.
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training <- training[inTrain,]
+testing <- training[-inTrain,]
+
+# Look for and exclude variables that are highly correlated.
+ncol(training)
+#[1] 53
+# Exclude classe variable.
+descrCorr <- cor(training[,-1])
+highCorr <- findCorrelation(descrCorr, 0.90)
+training <- training[, -highCorr]
+testing <- testing[, -highCorr]
+ncol(training)
+#[1] 46
+
+# Take a look at the data structure and some of the data.
+names(training)
+head(training)
+dim(training)
+dim(testing)
+
+# Goal: To see if I can identify the "Class"" of exercise: 
+#       A=Correct; 
+#       B=Elbows front; 
+#       C=Lift Dumbbell 1/2; 
+#       D=Lower Dumbbell 1/2; 
+#       E=Hip front
+
+# Tune and build an rpart model.
+bootControl <- trainControl(number = 200)
+set.seed(2)
+rpartFit <- train(classe ~ .,data=training,
+        method = "rpart", tuneLength = 5,
+        trControl = bootControl)
+
+# Predict rpart model on testing set.
+predRpart <- predict(rpartFit, newdata=testing)
+confusionMatrix(predRpart, testing$classe)
+
+# Build a random forest model.
+rfFit <- train(classe ~ .,data=training, method="rf")
+
+# Predict rf model on testing set.
+predRF <- predict(rfFit, newdata=testing)
+confusionMatrix(predRF, testing$classe)
+
+# Predict on validation set.
+predict(rfFit, newdata=validation)
+
+```
+
+
